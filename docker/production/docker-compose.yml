@@ -2,7 +2,7 @@ services:
   pcb-cost-estimator-prod:
     build:
       context: ../../
-      dockerfile: docker/development/Dockerfile
+      dockerfile: docker/production/Dockerfile
     image: pcb-cost-estimator-prod
     ports:
       - "5002:3000"

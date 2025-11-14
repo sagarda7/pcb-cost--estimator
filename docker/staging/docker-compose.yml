@@ -2,7 +2,7 @@ services:
   pcb-cost-estimator-staging:
     build:
       context: ../../
-      dockerfile: docker/development/Dockerfile
+      dockerfile: docker/staging/Dockerfile
     image: pcb-cost-estimator-staging
     ports:
       - "5003:3000"
