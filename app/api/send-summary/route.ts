@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     `;
 
     await resend.emails.send({
-      from: "Techasdy Estimator <no-reply@techasdy.com>", // add a verified domain or use onresend.com domain
+      from: `${customer.fullName} <no-reply@techasdy.com>`, // add a verified domain or use onresend.com domain
       to: ["techasdy@gmail.com"],
       subject: `New PCB Quote from ${customer.fullName}`,
       html,
