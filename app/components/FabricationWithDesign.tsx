@@ -10,6 +10,36 @@ const FAB_DESIGN_CONST = {
   componentLegsMultiplier: 40,
 };
 
+function calculateDesignCost(totalLegs: any) {
+  let remaining = totalLegs;
+  let cost = 0;
+
+  // Define tiers
+  const tiers = [
+    { limit: 10, multiplier: 40 },
+    { limit: 10, multiplier: 35 },
+    { limit: 10, multiplier: 25 },
+    { limit: 10, multiplier: 20 },
+  ];
+
+  // Apply tiered pricing
+  for (const tier of tiers) {
+    if (remaining <= 0) break;
+
+    const used = Math.min(remaining, tier.limit);
+    cost += used * tier.multiplier;
+    remaining -= used;
+  }
+
+  // Remaining legs use multiplier 10
+  if (remaining > 0) {
+    cost += remaining * 15;
+  }
+
+  return cost;
+}
+
+
 export default function FabricationWithDesign() {
   const [inputs, setInputs] = useState<DesignInputs>({
     height: "",
@@ -32,7 +62,10 @@ export default function FabricationWithDesign() {
 
   const area = height * width;
   const areaCost = roundup(area / 100) * FAB_DESIGN_CONST.areaRatePer100;
-  const designCostWithFab = totalComponentsLegs * FAB_DESIGN_CONST.componentLegsMultiplier;
+  const designCostWithFab = calculateDesignCost(totalComponentsLegs);
+  for(let i=0; i < totalComponentsLegs; i+=10){
+
+  }
 
   // Updated PCB cost formula
   const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5);
