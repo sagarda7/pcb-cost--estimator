@@ -72,7 +72,7 @@ export default function FabricationWithDesign() {
 
   const elecChem = FAB_DESIGN_CONST.elecChem * Math.max(1, layers);
   const cutting = FAB_DESIGN_CONST.cutting;
-  const unitCost = areaCost +  pcbCost + elecChem + cutting + 4*totalComponentsLegs;
+  const unitCost = areaCost +  pcbCost + elecChem + cutting + Math.max(100,5*totalComponentsLegs);
   const gross = (unitCost * qty)+designCostWithFab;
   const { discount, total } = discountRow(gross, qty);
 
