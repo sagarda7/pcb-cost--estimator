@@ -47,7 +47,7 @@ export default function FabricationOnly() {
   const cutting = FAB_ONLY_CONST.cutting;
   const unitCost = areaCost + thCost + pcbCost + elecChem + cutting+ smdCost + viaCost;
   const gross = unitCost * qty;
-  const { discount, total } = discountRow(gross, qty);
+  // const { discount, total } = discountRow(gross, qty);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-5xl">
@@ -92,8 +92,8 @@ export default function FabricationOnly() {
             <p>Cutting: <b>₹{cutting}</b></p>
             <p className="font-semibold mt-2">Unit Cost: <b>₹{unitCost}</b></p>
             <p>Gross Total (×{qty}): <b>₹{gross}</b></p>
-            <p>Discount: <b>₹{discount.toFixed(2)}</b></p><br/>
-            <p className="text-lg font-bold text-red-600">Final Total With Shipping (Rs. 150): <b>₹{(total + 150).toFixed(2)}</b></p>
+            {/* <p>Discount: <b>₹{discount.toFixed(2)}</b></p><br/> */}
+            <p className="text-lg font-bold text-red-600">Final Total With Shipping (Rs. 150): <b>₹{(gross + 150).toFixed(2)}</b></p>
           </div>
         </div>
       </div>
