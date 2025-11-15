@@ -1,9 +1,11 @@
 "use client";
 import React, { useState, ChangeEvent } from "react";
 import { num, clampQty, roundup } from "./utils";
-import { saveLead } from "../lib/db"; // change to "@/lib/db" if alias works
+import { LeadPayload, saveLead } from "../lib/db"; // change to "@/lib/db" if alias works
 import CustomerForm from "./CustomerForm";
 import SummaryModal from "./SummaryModal";
+import { sendEmailSummaryAction } from "@/actions";
+
 
 const CONST = { elecChem: 50, cutting: 50, areaRatePer100: 200, thPadMultiplier: 4, smdPadMultiplier: 4, viaMultiplier: 8 };
 
@@ -43,12 +45,21 @@ export default function FabricationOnly() {
     if (!layersValid) { setLayerError("Layers must be 1 or 2"); return; }
     try {
       setSaving(true);
-      await saveLead({
+      const payload: LeadPayload = {
         calculatorType: "fabrication",
         inputs: { ...inputs, layers: String(layers) },
         summary: { area, areaCost, thCost, smdCost, viaCost, pcbCost, elecChem, cutting, unitCost, qty, gross, shipping: 150, finalTotal: total },
         customer
-      });
+      }
+      await saveLead(payload);
+      // 2) Then email summary
+      try {
+        await sendEmailSummaryAction(payload);
+      } catch (e:any) {
+        console.warn("Email failed:", e?.message || e);
+        // optional: toast.warn("We saved your request, but email notification failed.");
+      }
+
       setRows([
         { label: "Area (cm²)", value: area.toFixed(2) },
         { label: "Area Cost", value: `₹${areaCost}` },

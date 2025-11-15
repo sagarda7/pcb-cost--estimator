@@ -1,9 +1,10 @@
 "use client";
 import React, { useState, ChangeEvent } from "react";
 import { num, clampQty, roundup } from "./utils";
-import { saveLead } from "../lib/db"; // change to "@/lib/db" if alias works
+import { LeadPayload, saveLead } from "../lib/db"; // change to "@/lib/db" if alias works
 import CustomerForm from "./CustomerForm";
 import SummaryModal from "./SummaryModal";
+import { sendEmailSummaryAction } from "@/actions";
 
 type DesignInputs = { height: string; width: string; totalComponentsLegs: string; layers: string; qty: string };
 
@@ -43,13 +44,24 @@ export default function FabricationWithDesign() {
   async function handleQuote(customer: any) {
     if (!layersValid) { setLayerError("Layers must be 1 or 2"); return; }
     try {
-      setSaving(true);
-      await saveLead({
+      const payload: LeadPayload = {
         calculatorType: "fabDesign",
         inputs: { ...inputs, layers: String(layers) },
-        summary: { area: Number.isFinite(area) ? Number(area.toFixed(2)) : 0, areaCost, pcbCost: Number(pcbCost.toFixed(2)), elecChem, cutting, unitCost, qty, gross, designCost, shipping, finalTotal: Number(finalTotal.toFixed(2)) },
+        summary: { area, areaCost, pcbCost, designCost, elecChem, cutting, unitCost, qty, gross, net, shipping, finalTotal },
         customer
-      });
+      };
+
+      setSaving(true);
+      //await saveLead(payload);
+
+      // 2) Then email summary
+      try {
+        await sendEmailSummaryAction(payload);
+      } catch (e:any) {
+        console.warn("Email failed:", e?.message || e);
+        // optional: toast.warn("We saved your request, but email notification failed.");
+      }
+
       setRows([
         { label: "Area (cm²)", value: area.toFixed(2) },
         { label: "Area Cost", value: `₹${areaCost}` },
