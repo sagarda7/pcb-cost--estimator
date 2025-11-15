@@ -1,102 +1,105 @@
 "use client";
 import React, { useState, ChangeEvent } from "react";
-import type { BaseInputs, CalcBreakdown, FabricationInputs } from "./types";
-import { num, clampQty, roundup, discountRow } from "./utils";
+import { num, clampQty, roundup } from "./utils";
+import { saveLead } from "../lib/db"; // change to "@/lib/db" if alias works
+import CustomerForm from "./CustomerForm";
+import SummaryModal from "./SummaryModal";
 
-const FAB_ONLY_CONST = {
-  elecChem: 50,
-  cutting: 50,
-  areaRatePer100: 200,
-  thPadMultiplier: 4,
-  smdPadMultiplier: 4,
-  viaMultiplier: 8,
-};
+const CONST = { elecChem: 50, cutting: 50, areaRatePer100: 200, thPadMultiplier: 4, smdPadMultiplier: 4, viaMultiplier: 8 };
+
+type FabricationInputs = { height: string; width: string; thPads: string; smdPads: string; vias: string; layers: string; qty: string };
 
 export default function FabricationOnly() {
-  const [inputs, setInputs] = useState<FabricationInputs>({
-    height: "",
-    width: "",
-    thPads: "",
-    smdPads: "",
-    vias: "",
-    layers: "1", // default 1 layer
-    qty: "2",
-  });
+  const [inputs, setInputs] = useState<FabricationInputs>({ height: "", width: "", thPads: "", smdPads: "", vias: "", layers: "1", qty: "2" });
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<any[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [layerError, setLayerError] = useState<string | null>(null);
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    if (name === "layers") {
+      // accept only 1 or 2
+      const v = Number(value);
+      const clamped = v <= 1 ? 1 : v >= 2 ? 2 : 1;
+      setInputs((s) => ({ ...s, layers: String(clamped) }));
+      setLayerError(null);
+      return;
+    }
     setInputs((s) => ({ ...s, [name]: value }));
   };
 
-  const height = num(inputs.height);
-  const width = num(inputs.width);
-  const thPads = num(inputs.thPads);
-  const layers = num(inputs.layers);
-  const qty = clampQty(inputs.qty);
+  const height = num(inputs.height), width = num(inputs.width), thPads = num(inputs.thPads), smdPads = num(inputs.smdPads), vias = num(inputs.vias), layers = num(inputs.layers), qty = clampQty(inputs.qty);
 
-  const area = height * width;
-  const areaCost = roundup(area / 100) * FAB_ONLY_CONST.areaRatePer100;
-  const thCost = thPads * FAB_ONLY_CONST.thPadMultiplier;
-  const smdCost = num(inputs.smdPads) * FAB_ONLY_CONST.smdPadMultiplier;
-  const viaCost = num(inputs.vias) * FAB_ONLY_CONST.viaMultiplier;
+  const area = height * width, areaCost = roundup(area / 100) * CONST.areaRatePer100, thCost = thPads * CONST.thPadMultiplier, smdCost = smdPads * CONST.smdPadMultiplier, viaCost = vias * CONST.viaMultiplier;
+  const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5), elecChem = CONST.elecChem * Math.max(1, layers), cutting = CONST.cutting;
+  const unitCost = areaCost + thCost + smdCost + viaCost + pcbCost + elecChem + cutting, gross = unitCost * qty, total = gross + 150;
 
-  // Updated PCB cost formula
-  const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5);
+  const layersValid = layers === 1 || layers === 2;
 
-  const elecChem = FAB_ONLY_CONST.elecChem * Math.max(1, layers);
-  const cutting = FAB_ONLY_CONST.cutting;
-  const unitCost = areaCost + thCost + pcbCost + elecChem + cutting+ smdCost + viaCost;
-  const gross = unitCost * qty;
-  // const { discount, total } = discountRow(gross, qty);
+
+  // in FabricationOnly / FabricationWithDesign
+  async function handleQuote(customer: any) {
+    if (!layersValid) { setLayerError("Layers must be 1 or 2"); return; }
+    try {
+      setSaving(true);
+      await saveLead({
+        calculatorType: "fabrication",
+        inputs: { ...inputs, layers: String(layers) },
+        summary: { area, areaCost, thCost, smdCost, viaCost, pcbCost, elecChem, cutting, unitCost, qty, gross, shipping: 150, finalTotal: total },
+        customer
+      });
+      setRows([
+        { label: "Area (cm²)", value: area.toFixed(2) },
+        { label: "Area Cost", value: `₹${areaCost}` },
+        { label: "PCB Cost", value: `₹${pcbCost.toFixed(2)}` },
+        { label: "Unit Cost", value: `₹${unitCost}` },
+        { label: `Gross Total ×${qty}`, value: `₹${gross}` },
+        { label: "Shipping", value: "₹150" },
+        { label: "Final Total", value: `₹${total}` }
+      ]);
+      setOpen(true); setSaving(false);
+    } catch (err: any) {
+      alert(`Save failed: ${err?.code || ''} ${err?.message || err}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-5xl">
-      <h2 className="text-xl font-semibold mb-4">Fabrication Only Calculator</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Form */}
+    <div className="p-6 bg-white shadow rounded w-full max-w-5xl">
+      <h2 className="text-xl font-semibold mb-4">Fabrication Only</h2>
+      <div className="grid md:grid-cols-2 gap-6">
         <div>
-          {[
-            { key: "height", label: "Height (cm)" },
-            { key: "width", label: "Width (cm)" },
-            { key: "thPads", label: "Number of TH Pads" },
-            { key: "smdPads", label: "Number of SMD Pads" },
-            { key: "vias", label: "Number of Vias" },
-            { key: "layers", label: "Number of Layers", min: 1 },
-            { key: "qty", label: "Total Quantity (min 2)", min: 2 },
-          ].map(({ key, label, min }) => (
-            <div key={key} className="mb-3">
-              <label className="block font-medium">{label}</label>
-              <input
-                type="number"
-                name={key}
-                value={(inputs as any)[key]}
-                min={min ?? 0}
-                onChange={onChange}
-                className="border w-full p-2 rounded-lg"
-              />
-            </div>
-          ))}
+          {([{ key: "height", label: "Height (cm)" },
+          { key: "width", label: "Width (cm)" },
+          { key: "thPads", label: "TH Pads" },
+          { key: "smdPads", label: "SMD Pads" },
+          { key: "vias", label: "Vias" },
+          { key: "layers", label: "Layers (1 or 2)", min: 1, max: 2 },
+          { key: "qty", label: "Quantity (min 2)", min: 2 }] as any[])
+            .map(({ key, label, min, max }) => (
+              <div key={key} className="mb-3">
+                <label className="block font-medium">{label}</label>
+                <input
+                  type="number"
+                  name={key}
+                  value={(inputs as any)[key]}
+                  min={min ?? 0}
+                  max={max ?? undefined}
+                  onChange={onChange}
+                  className={`border w-full p-2 rounded-lg ${key === "layers" && layerError ? "border-red-500" : ""}`}
+                />
+                {key === "layers" && layerError && <p className="text-xs text-red-600 mt-1">{layerError}</p>}
+              </div>
+            ))}
         </div>
-
-        {/* Summary */}
-        <div className="border-l pl-6">
-          <h3 className="text-lg font-semibold mb-3">Cost Summary</h3>
-          <div className="space-y-1 text-sm">
-            <p>Area: <b>{area.toFixed(2)}</b> cm²</p>
-            <p>Area Cost: <b>₹{areaCost}</b></p>
-            <p>TH Pads Cost: <b>₹{thCost}</b></p>
-            <p>SMD Pads Cost: <b>₹{smdCost}</b></p>
-            <p>Vias Cost: <b>₹{viaCost}</b></p>
-            <p>PCB Cost: <b>₹{pcbCost.toFixed(2)}</b></p>
-            <p>Electricity & Chemical: <b>₹{elecChem}</b></p>
-            <p>Cutting: <b>₹{cutting}</b></p>
-            <p className="font-semibold mt-2">Unit Cost: <b>₹{unitCost}</b></p>
-            <p>Gross Total (×{qty}): <b>₹{gross}</b></p>
-            {/* <p>Discount: <b>₹{discount.toFixed(2)}</b></p><br/> */}
-            <p className="text-lg font-bold text-red-600">Final Total With Shipping (Rs. 150): <b>₹{(gross + 150).toFixed(2)}</b></p>
-          </div>
+        <div className="border-l pl-4">
+          <CustomerForm onSubmit={handleQuote} submitting={saving} />
         </div>
       </div>
+      <SummaryModal open={open} onClose={() => setOpen(false)} title="Quote Summary" summary={rows} />
     </div>
   );
 }

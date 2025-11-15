@@ -1,134 +1,107 @@
 "use client";
 import React, { useState, ChangeEvent } from "react";
-import type { DesignInputs, CalcBreakdown } from "./types";
-import { num, clampQty, roundup, discountRow } from "./utils";
+import { num, clampQty, roundup } from "./utils";
+import { saveLead } from "../lib/db"; // change to "@/lib/db" if alias works
+import CustomerForm from "./CustomerForm";
+import SummaryModal from "./SummaryModal";
 
-const FAB_DESIGN_CONST = {
-  elecChem: 60,
-  cutting: 50,
-  areaRatePer100: 220,
-  componentLegsMultiplier: 40,
-};
+type DesignInputs = { height: string; width: string; totalComponentsLegs: string; layers: string; qty: string };
 
-function calculateDesignCost(totalLegs: any) {
-  let remaining = totalLegs;
-  let cost = 0;
+const CONST = { elecChem: 60, cutting: 50, areaRatePer100: 220 };
 
-  // Define tiers
-  const tiers = [
-    { limit: 10, multiplier: 40 },
-    { limit: 10, multiplier: 35 },
-    { limit: 10, multiplier: 25 },
-    { limit: 10, multiplier: 20 },
-  ];
-
-  // Apply tiered pricing
-  for (const tier of tiers) {
-    if (remaining <= 0) break;
-
-    const used = Math.min(remaining, tier.limit);
-    cost += used * tier.multiplier;
-    remaining -= used;
-  }
-
-  // Remaining legs use multiplier 10
-  if (remaining > 0) {
-    cost += remaining * 15;
-  }
-
-  return cost;
+function calculateDesignCost(totalLegs: number) {
+  let remaining = totalLegs, cost = 0;
+  const tiers = [{ limit: 10, multiplier: 40 }, { limit: 10, multiplier: 35 }, { limit: 10, multiplier: 25 }, { limit: 10, multiplier: 20 }];
+  for (const t of tiers) { if (remaining <= 0) break; const used = Math.min(remaining, t.limit); cost += used * t.multiplier; remaining -= used; }
+  if (remaining > 0) cost += remaining * 15; return cost;
 }
 
-
 export default function FabricationWithDesign() {
-  const [inputs, setInputs] = useState<DesignInputs>({
-    height: "",
-    width: "",
-    totalComponentsLegs: "5",
-    layers: "1", // default 1 layer
-    qty: "2"
-  });
+  const [inputs, setInputs] = useState<DesignInputs>({ height: "", width: "", totalComponentsLegs: "5", layers: "1", qty: "2" });
+  const [saving, setSaving] = useState(false); const [open, setOpen] = useState(false); const [rows, setRows] = useState<any[]>([]);
+  const [layerError, setLayerError] = useState<string | null>(null);
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setInputs((s) => ({ ...s, [name]: value }));
+    if (name === "layers") {
+      const v = Number(value);
+      const clamped = v <= 1 ? 1 : v >= 2 ? 2 : 1;
+      setInputs(s => ({ ...s, layers: String(clamped) }));
+      setLayerError(null);
+      return;
+    }
+    setInputs(s => ({ ...s, [name]: value }));
   };
 
-  const height = num(inputs.height);
-  const width = num(inputs.width);
-  const layers = num(inputs.layers);
-  const totalComponentsLegs = num(inputs.totalComponentsLegs);
-  const qty = clampQty(inputs.qty);
+  const height = num(inputs.height), width = num(inputs.width), layers = num(inputs.layers), legs = num(inputs.totalComponentsLegs), qty = clampQty(inputs.qty);
+  const area = height * width, areaCost = roundup(area / 100) * CONST.areaRatePer100, designCost = calculateDesignCost(legs);
+  const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5), elecChem = CONST.elecChem * Math.max(1, layers), cutting = CONST.cutting;
+  const unitCost = areaCost + pcbCost + elecChem + cutting + Math.max(100, 5 * legs), gross = unitCost * qty, net = gross + designCost, shipping = 150, finalTotal = net + shipping;
 
-  const area = height * width;
-  const areaCost = roundup(area / 100) * FAB_DESIGN_CONST.areaRatePer100;
-  const designCostWithFab = calculateDesignCost(totalComponentsLegs);
-  for(let i=0; i < totalComponentsLegs; i+=10){
+  const layersValid = layers === 1 || layers === 2;
+
+  async function handleQuote(customer: any) {
+    if (!layersValid) { setLayerError("Layers must be 1 or 2"); return; }
+    try {
+      setSaving(true);
+      await saveLead({
+        calculatorType: "fabDesign",
+        inputs: { ...inputs, layers: String(layers) },
+        summary: { area: Number.isFinite(area) ? Number(area.toFixed(2)) : 0, areaCost, pcbCost: Number(pcbCost.toFixed(2)), elecChem, cutting, unitCost, qty, gross, designCost, shipping, finalTotal: Number(finalTotal.toFixed(2)) },
+        customer
+      });
+      setRows([
+        { label: "Area (cm²)", value: area.toFixed(2) },
+        { label: "Area Cost", value: `₹${areaCost}` },
+        { label: "PCB Cost", value: `₹${pcbCost.toFixed(2)}` },
+        { label: "Unit Cost", value: `₹${unitCost}` },
+        { label: `Gross Total ×${qty}`, value: `₹${gross}` },
+        { label: "Design Cost", value: `₹${designCost}` },
+        { label: "Shipping", value: "₹150" },
+        { label: "Final Total", value: `₹${finalTotal}` }
+      ]);
+      setOpen(true); setSaving(false);
+    } catch (err: any) {
+      alert(`Save failed: ${err?.code || ''} ${err?.message || err}`);
+    } finally {
+      setSaving(false);
+    }
 
   }
-
-  // Updated PCB cost formula
-  const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5);
-
-  const elecChem = FAB_DESIGN_CONST.elecChem * Math.max(1, layers);
-  const cutting = FAB_DESIGN_CONST.cutting;
-  const unitCost = areaCost +  pcbCost + elecChem + cutting + Math.max(100,5*totalComponentsLegs);
-  const gross = (unitCost * qty);
-  const netCost = gross + designCostWithFab;
-  const netCostWithShipping = netCost + 150;
-  // const { discount, total } = discountRow(gross, qty);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-5xl">
       <h2 className="text-xl font-semibold mb-4">Fabrication + Design Calculator</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Form */}
         <div>
-          {[
-            { key: "height", label: "Height (cm)" },
-            { key: "width", label: "Width (cm)" },
-            { key: "totalComponentsLegs", label: "Total Components Legs as per as Schematic" },
-            { key: "layers", label: "Number of Layers", min: 1 },
-            { key: "qty", label: "Total Quantity (min 2)", min: 2 },
-          ].map(({ key, label, min }) => (
-            <div key={key} className="mb-3">
-              <label className="block font-medium">{label}</label>
-              <input
-                type="number"
-                name={key}
-                value={(inputs as any)[key]}
-                min={min ?? 0}
-                onChange={onChange}
-                className="border w-full p-2 rounded-lg"
-              />
-            </div>
-          ))}
-
-       
+          {([{ key: "height", label: "Height (cm)" },
+          { key: "width", label: "Width (cm)" },
+          { key: "totalComponentsLegs", label: "Total Components Legs as per Schematic" },
+          { key: "layers", label: "Number of Layers (1 or 2)", min: 1, max: 2 },
+          { key: "qty", label: "Total Quantity (min 2)", min: 2 }] as any[])
+            .map(({ key, label, min, max }) => (
+              <div key={key} className="mb-3">
+                <label className="block font-medium">{label}</label>
+                <input
+                  type="number"
+                  name={key}
+                  value={(inputs as any)[key]}
+                  min={min ?? 0}
+                  max={max ?? undefined}
+                  onChange={onChange}
+                  className={`border w-full p-2 rounded-lg ${key === "layers" && layerError ? "border-red-500" : ""}`}
+                />
+                {key === "layers" && layerError && <p className="text-xs text-red-600 mt-1">{layerError}</p>}
+              </div>
+            ))}
         </div>
-
-        {/* Summary */}
         <div className="border-l pl-6">
-          <h3 className="text-lg font-semibold mb-3">Cost Summary</h3>
-          <div className="space-y-1 text-sm">
-            <p>Area: <b>{area.toFixed(2)}</b> cm²</p>
-            <p>Area Cost: <b>₹{areaCost}</b></p>
-            <p>PCB Cost: <b>₹{pcbCost.toFixed(2)}</b></p>
-            <p>Electricity & Chemical: <b>₹{elecChem}</b></p>
-            <p>Cutting: <b>₹{cutting}</b></p>
-            <p className="font-semibold mt-2">Unit Cost: <b>₹{unitCost}</b></p><br/>
-            <p>Gross Total (×{qty} Pieces): <b>₹{gross}</b></p>
-
-            <p>Design Cost: <b>₹{designCostWithFab}</b></p>
-            <p>Net Total: <b>₹{(netCost).toFixed(2)}</b></p>
-             <p>Shipping: <b>₹{150}</b></p>
-             <p className="text-lg font-bold text-red-600">Final Total: <b>₹{(netCostWithShipping).toFixed(2)}</b></p>
-
-             
-             <p className="text-sm italic">* Design cost is calculated based on total component legs as per schematic.</p>
-          </div>
+          <h3 className="text-lg font-semibold mb-3">Your details</h3>
+          <CustomerForm onSubmit={handleQuote} submitting={saving} />
+          <p className="mt-3 text-xs text-gray-500">We’ll save your details and this estimate to prepare a formal quote.</p>
         </div>
       </div>
+      <SummaryModal open={open} onClose={() => setOpen(false)} title="Fabrication + Design — Quote Summary" summary={rows} />
     </div>
   );
 }
