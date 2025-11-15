@@ -73,8 +73,10 @@ export default function FabricationWithDesign() {
   const elecChem = FAB_DESIGN_CONST.elecChem * Math.max(1, layers);
   const cutting = FAB_DESIGN_CONST.cutting;
   const unitCost = areaCost +  pcbCost + elecChem + cutting + Math.max(100,5*totalComponentsLegs);
-  const gross = (unitCost * qty)+designCostWithFab;
-  const { discount, total } = discountRow(gross, qty);
+  const gross = (unitCost * qty);
+  const netCost = gross + designCostWithFab;
+  const netCostWithShipping = netCost + 150;
+  // const { discount, total } = discountRow(gross, qty);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-5xl">
@@ -114,13 +116,16 @@ export default function FabricationWithDesign() {
             <p>PCB Cost: <b>₹{pcbCost.toFixed(2)}</b></p>
             <p>Electricity & Chemical: <b>₹{elecChem}</b></p>
             <p>Cutting: <b>₹{cutting}</b></p>
-            <p className="font-semibold mt-2">Unit Cost: <b>₹{unitCost}</b></p>
-             <p>Design Cost: <b>₹{designCostWithFab}</b></p>
-            <p>Gross Total (×{qty}): <b>₹{gross}</b></p>
-            <p>Discount: <b>₹{discount.toFixed(2)}</b></p><br/>
-        
+            <p className="font-semibold mt-2">Unit Cost: <b>₹{unitCost}</b></p><br/>
+            <p>Gross Total (×{qty} Pieces): <b>₹{gross}</b></p>
+
+            <p>Design Cost: <b>₹{designCostWithFab}</b></p>
+            <p>Net Total: <b>₹{(netCost).toFixed(2)}</b></p>
              <p>Shipping: <b>₹{150}</b></p>
-             <p className="text-lg font-bold text-red-600">Final Total: <b>₹{(total + 150).toFixed(2)}</b></p>
+             <p className="text-lg font-bold text-red-600">Final Total: <b>₹{(netCostWithShipping).toFixed(2)}</b></p>
+
+             
+             <p className="text-sm italic">* Design cost is calculated based on total component legs as per schematic.</p>
           </div>
         </div>
       </div>
