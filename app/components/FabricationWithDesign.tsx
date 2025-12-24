@@ -35,7 +35,7 @@ export default function FabricationWithDesign() {
   };
 
   const height = num(inputs.height), width = num(inputs.width), layers = num(inputs.layers), legs = num(inputs.totalComponentsLegs), qty = clampQty(inputs.qty);
-  const area = height * width, areaCost = roundup(area / 100) * CONST.areaRatePer100, designCost = calculateDesignCost(legs);
+  const area = height * width, areaCost = roundup(area / 1000) * CONST.areaRatePer100, designCost = calculateDesignCost(legs);
   const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5), elecChem = CONST.elecChem * Math.max(1, layers), cutting = CONST.cutting;
   const unitCost = areaCost + pcbCost + elecChem + cutting + Math.max(100, 5 * legs), gross = unitCost * qty, net = gross + designCost, shipping = 150, finalTotal = net + shipping;
 
@@ -86,11 +86,11 @@ export default function FabricationWithDesign() {
       <h2 className="text-xl font-semibold mb-4">Fabrication + Design Calculator</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div>
-          {([{ key: "height", label: "Height (cm)" },
-          { key: "width", label: "Width (cm)" },
+          {([{ key: "height", label: "Height (mm)" },
+          { key: "width", label: "Width (mm)" },
           { key: "totalComponentsLegs", label: "Total Components Legs as per Schematic" },
           { key: "layers", label: "Number of Layers (1 or 2)", min: 1, max: 2 },
-          { key: "qty", label: "Total Quantity (min 2)", min: 2 }] as any[])
+          { key: "qty", label: "Total Quantity (min 1)", min: 1 }] as any[])
             .map(({ key, label, min, max }) => (
               <div key={key} className="mb-3">
                 <label className="block font-medium">{label}</label>

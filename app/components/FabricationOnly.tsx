@@ -33,7 +33,7 @@ export default function FabricationOnly() {
 
   const height = num(inputs.height), width = num(inputs.width), thPads = num(inputs.thPads), smdPads = num(inputs.smdPads), vias = num(inputs.vias), layers = num(inputs.layers), qty = clampQty(inputs.qty);
 
-  const area = height * width, areaCost = roundup(area / 100) * CONST.areaRatePer100, thCost = thPads * CONST.thPadMultiplier, smdCost = smdPads * CONST.smdPadMultiplier, viaCost = vias * CONST.viaMultiplier;
+  const area = height * width, areaCost = roundup(area / 1000) * CONST.areaRatePer100, thCost = thPads * CONST.thPadMultiplier, smdCost = smdPads * CONST.smdPadMultiplier, viaCost = vias * CONST.viaMultiplier;
   const pcbCost = 150 * (Math.max(1, layers - 1) + (layers - 1) * 0.5), elecChem = CONST.elecChem * Math.max(1, layers), cutting = CONST.cutting;
   const unitCost = areaCost + thCost + smdCost + viaCost + pcbCost + elecChem + cutting, gross = unitCost * qty, total = gross + 150;
 
@@ -83,13 +83,13 @@ export default function FabricationOnly() {
       <h2 className="text-xl font-semibold mb-4">Fabrication Only</h2>
       <div className="grid md:grid-cols-2 gap-6">
         <div>
-          {([{ key: "height", label: "Height (cm)" },
-          { key: "width", label: "Width (cm)" },
+          {([{ key: "height", label: "Height (mm)" },
+          { key: "width", label: "Width (mm)" },
           { key: "thPads", label: "TH Pads" },
           { key: "smdPads", label: "SMD Pads" },
           { key: "vias", label: "Vias" },
           { key: "layers", label: "Layers (1 or 2)", min: 1, max: 2 },
-          { key: "qty", label: "Quantity (min 2)", min: 2 }] as any[])
+          { key: "qty", label: "Quantity (min 1)", min: 1 }] as any[])
             .map(({ key, label, min, max }) => (
               <div key={key} className="mb-3">
                 <label className="block font-medium">{label}</label>
