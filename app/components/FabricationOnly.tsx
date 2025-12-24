@@ -12,7 +12,7 @@ import QuotePdf from "./QuotePdf";
 const CONST = {
   elecChem: 50,
   cutting: 50,
-  areaRatePer100: 2,
+  areaRatePer100: 220,
   thPadMultiplier: 4,
   smdPadMultiplier: 4,
   viaMultiplier: 8,
@@ -63,7 +63,7 @@ function calcOne(inputs: FabricationInputs) {
   const qty = clampQty(inputs.qty);
 
   const area = height * width; // mm²
-  const areaCost = roundup(area / 100) * CONST.areaRatePer100;
+  const areaCost = roundup(area / 10000) * CONST.areaRatePer100;
   const thCost = thPads * CONST.thPadMultiplier;
   const smdCost = smdPads * CONST.smdPadMultiplier;
   const viaCost = vias * CONST.viaMultiplier;

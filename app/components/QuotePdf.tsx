@@ -97,7 +97,7 @@ export default function QuotePdf({
               {section.rows.map((r, i) => (
                 <View
                   key={i}
-                  style={[styles.row, i === section.rows.length - 1 ? styles.rowLast : null]}
+                  style={[styles.row, i === section.rows.length - 1 ? styles.rowLast : {}]}
                 >
                   <Text style={styles.label}>{r.label}</Text>
                   <Text style={styles.value}>{String(r.value)}</Text>
