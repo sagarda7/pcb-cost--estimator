@@ -7,7 +7,7 @@ export const num = (v: string | number | undefined | null): number => {
 /** Clamp quantity to minimum of 2 as requested. */
 export const clampQty = (v: string | number): number => {
   const n = num(v);
-  return Math.max(2, Math.floor(n));
+  return Math.max(1, Math.floor(n));
 };
 
 /** Excel-like ROUNDUP(x) for positive x (ceil). */
