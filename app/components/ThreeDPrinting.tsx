@@ -10,7 +10,7 @@ import { pdf } from "@react-pdf/renderer";
 import { saveLead } from "../lib/db";
 import { sendEmailSummaryAction } from "@/actions";
 
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import * as THREE from "three";
 
 type Row = { label: string; value: string | number };
