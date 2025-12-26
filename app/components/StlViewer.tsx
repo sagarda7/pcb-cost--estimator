@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type Props = {
   geometry: THREE.BufferGeometry | null;
@@ -35,7 +35,7 @@ export default function StlViewer({ geometry, rotationDeg }: Props) {
     cameraRef.current = null;
     meshRef.current = null;
 
-    const w = 320;
+    const w = 450;
     const h = 320;
 
     const scene = new THREE.Scene();
