@@ -43,7 +43,7 @@ const DEFAULTS = {
   rotationZ: "0",
 };
 
-// If you want PETG time same as PLA, set flowMult to 1.0
+// Material densities can vary by brand. You can tune these slightly if needed.
 const MATERIAL_PROPS: Record<Material, { density: number; flowMult: number }> = {
   PLA: { density: 1.24, flowMult: 1.0 },
   PETG: { density: 1.27, flowMult: 0.92 },
@@ -53,15 +53,15 @@ const CONST = {
   heatAndPrimeMinutes: 15,
   primeWasteGrams: 4,
 
-  ratePerGram: 8,
+  ratePerGram: 7,
   ratePerHour: 100,
 
-  // Ender-3 V3 (Creality profile) effective avg flow (mm³/s).
-  // Tuned higher so base time is closer to Creality (fast profile).
+  // ✅ Calibrated a bit higher to match Ender-3 V3 “fast-ish” real time vs pure volume math
+  // (Your earlier 4.4 made time too high once extrusion volume is corrected.)
   effFlowByLayer: {
-    "0.20": 4.4,
-    "0.25": 5.2,
-    "0.28": 5.6,
+    "0.20": 5.0,
+    "0.25": 5.8,
+    "0.28": 6.2,
   } as const,
 
   patternTimeMult: {
@@ -73,26 +73,44 @@ const CONST = {
     Cubic: 1.12,
   } as const satisfies Record<InfillPattern, number>,
 
-  // Support “density factor” for volume estimate
+  // ✅ Support density factors were too high before (tree supports are sparse).
+  // This reduces support volume to match slicer reality.
   supportDensityFactor: {
-    Tree: 0.10,
-    Normal: 0.18,
+    Tree: 0.035,
+    Normal: 0.06,
   } as const satisfies Record<SupportType, number>,
 
   // Geometry → extrusion approximation
   lineWidthMm: 0.42,
-  shellSurfaceFactor: 0.60,
+
+  // ✅ Increased so perimeters/top/bottom are not undercounted
+  // (Your 0.60 underestimates extrusion for many prints.)
+  shellSurfaceFactor: 0.85,
 
   // Thin parts (lithophanes/plates)
   thinMinDimMm: 2.2,
 
-  // Support cap vs model volume (prevents explosions)
-  supportVolCapRatio: 0.35,
+  // ✅ Support cap reduced (was 0.35 -> too big)
+  supportVolCapRatio: 0.15,
 
-  // Near-slicer support gating (prevents tiny-noise triangles from creating supports)
-  supportMinOverhangAreaMm2: 80, // below this, treat as no supports
-  supportMinAvgHeightMm: 2, // below this, treat as no supports
-  thinTreeSupportHeightCapMm: 6, // for thin parts + tree, clamp height
+  // Support gating
+  supportMinOverhangAreaMm2: 80,
+  supportMinAvgHeightMm: 2,
+
+  // Height caps
+  thinTreeSupportHeightCapMm: 6,
+  treeSupportHeightCapMm: 15,
+  normalSupportHeightCapMm: 25,
+
+  // ✅ Key fix: slicers don’t build supports up to full centroid height.
+  // Using only ~25% of avg height gets closer to Creality.
+  supportHeightScale: 0.25,
+
+  // Pricing uplift when supports are required
+  supportFeeRate: 0.2,
+
+  // Small fudge for overlap/seams/flow reality
+  flowFudge: 1.04,
 };
 
 type ItemInputs = {
@@ -122,7 +140,6 @@ type Item = {
 
   geometry: THREE.BufferGeometry | null;
 
-  // invariant metrics from original geometry
   volumeMm3: number;
   surfaceAreaMm2: number;
 
@@ -199,7 +216,6 @@ function analyzeVolumeAndArea(geo: THREE.BufferGeometry) {
   const n = new THREE.Vector3();
 
   const idx = g.index;
-
   const readV = (i: number, out: THREE.Vector3) => out.set(pos.getX(i), pos.getY(i), pos.getZ(i));
   const triCount = idx ? idx.count / 3 : pos.count / 3;
 
@@ -276,9 +292,6 @@ function computeBottomAreaMm2(geo: THREE.BufferGeometry) {
 
 /**
  * Overhang stats: area and average centroid height above bed.
- * Near-slicer fixes:
- * - ignore near-vertical faces (stricter for thin parts)
- * - use centroid height for avg support height
  */
 function computeOverhangStatsMm2Mm(
   geo: THREE.BufferGeometry,
@@ -295,7 +308,6 @@ function computeOverhangStatsMm2Mm(
   const maxZ = bb ? bb.max.z : 0;
   const height = Math.max(0, maxZ - minZ);
 
-  // threshold relative to downward vertical
   const cosThresh = Math.cos(THREE.MathUtils.degToRad(thresholdDeg));
 
   let area = 0;
@@ -309,7 +321,6 @@ function computeOverhangStatsMm2Mm(
   const e2 = new THREE.Vector3();
   const n = new THREE.Vector3();
 
-  // ✅ stricter for lithophanes/plates to avoid “noisy” triangles triggering supports
   const downZCutoff = isThinPart ? -0.45 : -0.15;
 
   for (let i = 0; i < pos.count; i += 3) {
@@ -325,12 +336,9 @@ function computeOverhangStatsMm2Mm(
     if (triArea <= 0) continue;
 
     const normalUnit = n.clone().normalize();
-
-    // Must be clearly downward-facing; ignore near-vertical faces completely
     if (normalUnit.z > downZCutoff) continue;
 
-    const downDot = -normalUnit.z; // 1 = straight down
-    // within allowed threshold -> no support
+    const downDot = -normalUnit.z;
     if (downDot >= cosThresh) continue;
 
     const cz = (v0.z + v1.z + v2.z) / 3;
@@ -366,20 +374,26 @@ type CalcResult = {
 
   volumeMm3One: number;
   printVolOne: number;
-  supportVolOne: number;
 
+  // Support details
+  supportVolOne: number;
   overhangAreaMm2: number;
   avgOverhangHeightMm: number;
 
-  baseTotalGrams: number;
-  baseTimeSec: number;
+  // Display estimates (include support extrusion)
+  displayTotalGrams: number;
+  displayTimeSec: number;
 
+  // Quote estimates (exclude support extrusion; overheads)
   quotedTotalGrams: number;
   quotedTimeSec: number;
 
-  supportMaterialCost: number;
   materialCost: number;
   timeCost: number;
+
+  supportFeeRate: number;
+  supportFee: number;
+  subtotal: number;
   total: number;
 };
 
@@ -423,7 +437,7 @@ function calcOne(item: Item): CalcResult | null {
 
   const overhang = computeOverhangStatsMm2Mm(gRot, supportAngleDeg, isThinPart);
   const overhangAreaMm2 = overhang.areaMm2;
-  const avgOverhangHeightMm = overhang.avgHeightMm;
+  const avgOverhangHeightMmRaw = overhang.avgHeightMm;
 
   // ---- Print extrusion volume estimate ----
   const wallThicknessMm = wallLoops * CONST.lineWidthMm;
@@ -440,7 +454,7 @@ function calcOne(item: Item): CalcResult | null {
 
   let printVolOne = shellVolOne + bottomVolOne + infillVolOne;
 
-  // ✅ thin part: best approximation is print volume ≈ model volume
+  // Thin part: print volume ~= model volume
   if (isThinPart) {
     printVolOne = volumeMm3One;
   }
@@ -451,52 +465,71 @@ function calcOne(item: Item): CalcResult | null {
     printVolOne = volumeMm3One * ratio;
   }
 
-  // ---- Support required gating (near-slicer) ----
+  // ---- Support required gating ----
   const supportRequired =
     supportEnabled &&
     overhangAreaMm2 >= CONST.supportMinOverhangAreaMm2 &&
-    avgOverhangHeightMm >= CONST.supportMinAvgHeightMm;
+    avgOverhangHeightMmRaw >= CONST.supportMinAvgHeightMm;
 
-  // ---- Support volume estimate ----
+  // ---- Support volume estimate (calibrated) ----
   let supportVolOne = 0;
-  let effectiveSupportHeight = avgOverhangHeightMm;
+
+  // ✅ Key fix: scale down height (slicer does not build supports up to centroid height)
+  let effectiveSupportHeight = avgOverhangHeightMmRaw * CONST.supportHeightScale;
 
   if (supportRequired) {
-    // Thin + tree: clamp height to avoid noise generating tall supports
-    if (isThinPart && supportType === "Tree") {
-      effectiveSupportHeight = Math.min(effectiveSupportHeight, CONST.thinTreeSupportHeightCapMm);
-    }
+    // caps by type
+    const cap =
+      isThinPart && supportType === "Tree"
+        ? CONST.thinTreeSupportHeightCapMm
+        : supportType === "Tree"
+        ? CONST.treeSupportHeightCapMm
+        : CONST.normalSupportHeightCapMm;
+
+    effectiveSupportHeight = Math.min(effectiveSupportHeight, cap);
 
     const densityFactor = CONST.supportDensityFactor[supportType] ?? 0;
-    const treeSparseness = supportType === "Tree" ? 0.65 : 1.0;
+    const treeSparseness = supportType === "Tree" ? 0.5 : 1.0;
 
     supportVolOne = overhangAreaMm2 * effectiveSupportHeight * densityFactor * treeSparseness;
     supportVolOne = Math.min(supportVolOne, volumeMm3One * CONST.supportVolCapRatio);
+  } else {
+    effectiveSupportHeight = Math.min(effectiveSupportHeight, 0);
   }
 
   const printVolTotal = printVolOne * copies;
   const supportVolTotal = supportVolOne * copies;
 
-  // ---- Base (Creality-like) grams/time ----
-  const baseTotalGrams = ((printVolTotal + supportVolTotal) / 1000) * mat.density;
-
+  // ---- Time ----
   const effFlowBase = CONST.effFlowByLayer[layerH] ?? CONST.effFlowByLayer["0.20"];
   const effFlow = effFlowBase * (mat.flowMult ?? 1.0);
   const patternMult = CONST.patternTimeMult[pattern] ?? 1.0;
 
-  let baseTimeSec = effFlow > 0 ? ((printVolTotal + supportVolTotal) / effFlow) * patternMult : 0;
-  if (!Number.isFinite(baseTimeSec) || baseTimeSec < 0) baseTimeSec = 0;
+  // DISPLAY includes supports (to look like slicer)
+  let displayTimeSec = effFlow > 0 ? ((printVolTotal + supportVolTotal) / effFlow) * patternMult : 0;
+  if (!Number.isFinite(displayTimeSec) || displayTimeSec < 0) displayTimeSec = 0;
 
-  // ---- Quoted ----
-  const quotedTotalGrams = baseTotalGrams + CONST.primeWasteGrams;
-  const quotedTimeSec = baseTimeSec + CONST.heatAndPrimeMinutes * 60;
+  // DISPLAY grams includes supports
+  const displayTotalGrams =
+    ((printVolTotal + supportVolTotal) / 1000) * mat.density * CONST.flowFudge;
+
+  // QUOTED excludes support extrusion (simple business logic)
+  let baseChargeTimeSec = effFlow > 0 ? (printVolTotal / effFlow) * patternMult : 0;
+  if (!Number.isFinite(baseChargeTimeSec) || baseChargeTimeSec < 0) baseChargeTimeSec = 0;
+
+  const baseChargeGrams = (printVolTotal / 1000) * mat.density * CONST.flowFudge;
+
+  const quotedTotalGrams = baseChargeGrams + CONST.primeWasteGrams;
+  const quotedTimeSec = baseChargeTimeSec + CONST.heatAndPrimeMinutes * 60;
 
   const materialCost = quotedTotalGrams * CONST.ratePerGram;
   const timeCost = (quotedTimeSec / 3600) * CONST.ratePerHour;
-  const total = materialCost + timeCost;
+  const subtotal = materialCost + timeCost;
 
-  const supportGrams = (supportVolTotal / 1000) * mat.density;
-  const supportMaterialCost = supportGrams * CONST.ratePerGram;
+  const supportFeeRate = CONST.supportFeeRate;
+  const supportFee = supportRequired ? subtotal * supportFeeRate : 0;
+
+  const total = subtotal + supportFee;
 
   return {
     material,
@@ -519,20 +552,23 @@ function calcOne(item: Item): CalcResult | null {
 
     volumeMm3One,
     printVolOne,
+
     supportVolOne,
-
     overhangAreaMm2,
-    avgOverhangHeightMm: effectiveSupportHeight, // show effective height used for support
+    avgOverhangHeightMm: supportRequired ? effectiveSupportHeight : 0,
 
-    baseTotalGrams,
-    baseTimeSec,
+    displayTotalGrams,
+    displayTimeSec,
 
     quotedTotalGrams,
     quotedTimeSec,
 
-    supportMaterialCost,
     materialCost,
     timeCost,
+
+    supportFeeRate,
+    supportFee,
+    subtotal,
     total,
   };
 }
@@ -604,8 +640,6 @@ export default function ThreeDPrinting() {
     setItems((prev) =>
       prev.map((it) => {
         if (it.id !== itemId) return it;
-
-        // If supportEnabled turned off, keep type but calculations will treat as "None"
         return { ...it, inputs: { ...it.inputs, [name]: value } as any };
       })
     );
@@ -688,24 +722,34 @@ export default function ThreeDPrinting() {
           { label: "Copies", value: c.copies },
           { label: "Rotation (deg)", value: `X ${c.rotation.x} / Y ${c.rotation.y} / Z ${c.rotation.z}` },
 
-          { label: "Thin part mode", value: c.isThinPart ? `Yes (minDim ${c.minDimMm.toFixed(2)}mm)` : `No (minDim ${c.minDimMm.toFixed(2)}mm)` },
+          {
+            label: "Thin part mode",
+            value: c.isThinPart
+              ? `Yes (minDim ${c.minDimMm.toFixed(2)}mm)`
+              : `No (minDim ${c.minDimMm.toFixed(2)}mm)`,
+          },
 
           { label: "Model volume (one) (mm³)", value: c.volumeMm3One.toFixed(2) },
           { label: "Est. print vol (one) (mm³)", value: c.printVolOne.toFixed(2) },
+
           { label: "Est. support vol (one) (mm³)", value: c.supportVolOne.toFixed(2) },
-
           { label: "Overhang area (mm²)", value: c.overhangAreaMm2.toFixed(2) },
-          { label: "Avg overhang height used (mm)", value: c.avgOverhangHeightMm.toFixed(2) },
+          { label: "Avg support height used (mm)", value: c.avgOverhangHeightMm.toFixed(2) },
 
-          { label: "Creality-like weight (g)", value: c.baseTotalGrams.toFixed(2) },
-          { label: "Creality-like time (min)", value: (c.baseTimeSec / 60).toFixed(1) },
+          { label: "Estimated weight (g)", value: c.displayTotalGrams.toFixed(2) },
+          { label: "Estimated time (min)", value: (c.displayTimeSec / 60).toFixed(1) },
 
           { label: "Quoted weight (g) (+4g)", value: c.quotedTotalGrams.toFixed(2) },
           { label: "Quoted time (min) (+15m)", value: (c.quotedTimeSec / 60).toFixed(1) },
 
-          { label: "Support material cost (Rs)", value: `Rs ${c.supportMaterialCost.toFixed(0)}` },
           { label: "Material cost (Rs)", value: `Rs ${c.materialCost.toFixed(0)}` },
           { label: "Time cost (Rs)", value: `Rs ${c.timeCost.toFixed(0)}` },
+
+          { label: "Subtotal (Rs)", value: `Rs ${c.subtotal.toFixed(0)}` },
+          {
+            label: `Support fee (${Math.round(c.supportFeeRate * 100)}%) (Rs)`,
+            value: `Rs ${c.supportFee.toFixed(0)}`,
+          },
           { label: "Item total (Rs)", value: `Rs ${c.total.toFixed(0)}` },
         ],
       };
@@ -761,7 +805,11 @@ export default function ThreeDPrinting() {
                   3D Print Item {items.length > 1 ? `• Item ${idx + 1}` : ""}
                 </h3>
                 {items.length > 1 && (
-                  <button type="button" onClick={() => removeItem(it.id)} className="text-sm text-red-600 hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => removeItem(it.id)}
+                    className="text-sm text-red-600 hover:underline"
+                  >
                     Remove
                   </button>
                 )}
@@ -779,7 +827,9 @@ export default function ThreeDPrinting() {
                       className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                     />
                     {it.filename ? <p className="text-xs text-gray-600 mt-1">{it.filename}</p> : null}
-                    {it.volumeMm3 ? <p className="text-xs text-gray-600 mt-1">Model volume: {it.volumeMm3.toFixed(2)} mm³</p> : null}
+                    {it.volumeMm3 ? (
+                      <p className="text-xs text-gray-600 mt-1">Model volume: {it.volumeMm3.toFixed(2)} mm³</p>
+                    ) : null}
                     {it.error ? <p className="text-xs text-red-600 mt-1">{it.error}</p> : null}
                   </div>
 
@@ -880,7 +930,6 @@ export default function ThreeDPrinting() {
                     </select>
                   </div>
 
-                  {/* Support enable */}
                   <div className="md:col-span-3 flex items-center gap-2">
                     <input
                       id={`supportEnabled-${it.id}`}
@@ -925,18 +974,26 @@ export default function ThreeDPrinting() {
                     />
                   </div>
 
-                  {/* Orientation */}
                   <div className="md:col-span-3">
                     <div className="flex items-center justify-between mt-2">
                       <p className="text-sm font-semibold text-gray-700">Orientation (affects supports)</p>
-                      <button type="button" onClick={() => resetRotation(it.id)} className="text-xs text-gray-700 underline">
+                      <button
+                        type="button"
+                        onClick={() => resetRotation(it.id)}
+                        className="text-xs text-gray-700 underline"
+                      >
                         Reset
                       </button>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
                       {(["rotationX", "rotationY", "rotationZ"] as const).map((axis) => {
-                        const label = axis === "rotationX" ? "Rotate X (deg)" : axis === "rotationY" ? "Rotate Y (deg)" : "Rotate Z (deg)";
+                        const label =
+                          axis === "rotationX"
+                            ? "Rotate X (deg)"
+                            : axis === "rotationY"
+                            ? "Rotate Y (deg)"
+                            : "Rotate Z (deg)";
                         return (
                           <div key={axis}>
                             <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
@@ -948,10 +1005,18 @@ export default function ThreeDPrinting() {
                               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                             />
                             <div className="flex gap-2 mt-1">
-                              <button type="button" onClick={() => bumpRotation(it.id, axis, 90)} className="text-xs border rounded px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={() => bumpRotation(it.id, axis, 90)}
+                                className="text-xs border rounded px-2 py-1"
+                              >
                                 +90
                               </button>
-                              <button type="button" onClick={() => bumpRotation(it.id, axis, -90)} className="text-xs border rounded px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={() => bumpRotation(it.id, axis, -90)}
+                                className="text-xs border rounded px-2 py-1"
+                              >
                                 -90
                               </button>
                             </div>
