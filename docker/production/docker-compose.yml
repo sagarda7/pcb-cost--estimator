@@ -1,3 +1,4 @@
+name: pcb-cost-estimator-production
 services:
   pcb-cost-estimator-prod:
     build:

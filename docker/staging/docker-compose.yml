@@ -1,3 +1,4 @@
+name: pcb-cost-estimator-staging
 services:
   pcb-cost-estimator-staging:
     build:

@@ -1,3 +1,4 @@
+name: pcb-cost-estimator-development
 services:
   pcb-cost-estimator-dev:
     build:
