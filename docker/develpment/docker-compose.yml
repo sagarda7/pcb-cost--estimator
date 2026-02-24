@@ -7,3 +7,4 @@ services:
     image: pcb-cost-estimator-dev
     ports:
       - "5001:3000"
+    restart: unless-stopped
