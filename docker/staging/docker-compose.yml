@@ -7,3 +7,4 @@ services:
     image: pcb-cost-estimator-staging
     ports:
       - "5003:3000"
+    restart: unless-stopped
