@@ -5,7 +5,7 @@ import FabricationWithDesign from "./components/FabricationWithDesign";
 import ThreeDPrinting from "./components/ThreeDPrinting";
 
 export default function Page() {
-  const [activeTab, setActiveTab] = useState<"fabrication" | "fabDesign" | "printing3d">("fabrication");
+  const [activeTab, setActiveTab] = useState<"fabrication" | "fabDesign" | "printing3d">("fabDesign");
 
   return (
     <main className="min-h-screen bg-gray-100 flex flex-col items-center p-6">
@@ -18,14 +18,14 @@ export default function Page() {
       <br />
 
       <div className="flex flex-wrap gap-3 mb-6">
-        <button
+        {/* <button
           onClick={() => setActiveTab("fabrication")}
           className={`px-4 py-2 rounded-lg ${
             activeTab === "fabrication" ? "bg-blue-600 text-white" : "bg-white border"
           }`}
         >
           Fabrication Only
-        </button>
+        </button> */}
 
         <button
           onClick={() => setActiveTab("fabDesign")}

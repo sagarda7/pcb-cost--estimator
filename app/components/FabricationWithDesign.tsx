@@ -353,14 +353,14 @@ export default function FabricationWithDesign() {
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-5xl">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Fabrication + Design Calculator</h2>
-        <button
+        <h2 className="text-xl font-semibold">Hardware Project Design Estimator</h2>
+        {/* <button
           type="button"
           onClick={addItem}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
         >
           + Add PCB
-        </button>
+        </button> */}
       </div>
 
       <div className="grid gap-6">
