@@ -75,7 +75,7 @@ export default function QuotePdf({
         {customer ? (
           <View style={styles.customerBox}>
             <Text style={styles.customerHeader}>Customer Details</Text>
-            <Text style={styles.customerLine}>Name: {customer?.name || "-"}</Text>
+            <Text style={styles.customerLine}>Name: {customer?.fullName || customer?.name || "-"}</Text>
             <Text style={styles.customerLine}>Phone: {customer?.phone || "-"}</Text>
             <Text style={styles.customerLine}>Email: {customer?.email || "-"}</Text>
             {customer?.company ? (
